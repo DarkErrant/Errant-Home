@@ -1,8 +1,11 @@
 alias: 'Központi Fűtés: Indítás és Kazánvezérlés'
 description: >-
   Minden fűtési igényt kezel, indítja a kazánt, a szivattyúkat. A leállítást
-  külön modulok végzik.
+  külön modulok végzik; ez az automatizmus csak a relé ESP visszatérésekor
+  kapcsol le, ha közben megszűnt minden igény.
 triggers:
+  # A fizikai Q7 kontaktus csak újraértékelést indít, önmagában nem igény:
+  # a központi kör igényét a climate.kazan_haz_kazan_vezerles_q7_kozponti adja.
   - trigger: state
     entity_id:
       - binary_sensor.rele_computherm_q7_termosztat
@@ -16,6 +19,26 @@ triggers:
       - climate.kazan_haz_kazan_vezerles_q7_kozponti
     to:
       - heat
+  # A termosztátok üzemmódja végig "heat" marad, a tényleges fűtési igényt a
+  # hvac_action jelzi. Enélkül egy idle -> heating váltás után semmi nem
+  # indította újra a kazánt és a szivattyúkat.
+  - trigger: state
+    entity_id:
+      - climate.padlofutes_visszatero_szabalyzo
+      - climate.kazan_haz_kazan_vezerles_q7_kozponti
+      - climate.otthon_padlo_szabalyozas
+    attribute: hvac_action
+    to: heating
+  # A relé ESP újraindulása / újracsatlakozása (és a HA újraindulása) után a
+  # relék állapota eltérhet az igénytől, ezért ilyenkor újra kiértékeljük.
+  - trigger: state
+    id: resync
+    entity_id:
+      - switch.kazan_haz_rele_relay_1_kazan
+    from: unavailable
+    to:
+      - 'on'
+      - 'off'
 actions:
   - action: timer.start
     metadata: {}
@@ -23,7 +46,8 @@ actions:
       entity_id: timer.eloszamolas
     data: {}
   - if:
-      - condition: or
+      - alias: Padló kör kér fűtést
+        condition: or
         conditions:
           - condition: state
             entity_id: climate.padlofutes_visszatero_szabalyzo
@@ -33,16 +57,22 @@ actions:
             entity_id: climate.kazan_haz_kazan_vezerles_q7_kozponti
             attribute: hvac_action
             state: heating
-          - condition: state
-            entity_id: climate.otthon_padlo_szabalyozas
-            state:
-              - heat
+          # A tényleges igény a hvac_action; az üzemmódra ("heat") csak akkor
+          # esünk vissza, ha az entitás nem jelent hvac_action-t.
+          - alias: Otthon padló szabályozás fűtést kér
+            condition: template
+            value_template: >-
+              {% set e = 'climate.otthon_padlo_szabalyozas' %}
+              {{ state_attr(e, 'hvac_action') == 'heating'
+                 or (state_attr(e, 'hvac_action') is none
+                     and is_state(e, 'heat')) }}
     then:
       - action: switch.turn_on
         target:
           entity_id: switch.kazan_haz_rele_relay_4_padlo_szivattyu
   - if:
-      - condition: or
+      - alias: Bármelyik kör kér fűtést
+        condition: or
         conditions:
           - condition: state
             entity_id: binary_sensor.rele_computherm_q3_termosztat
@@ -55,29 +85,37 @@ actions:
             entity_id: climate.kazan_haz_kazan_vezerles_q7_kozponti
             attribute: hvac_action
             state: heating
-          - condition: state
-            entity_id: climate.otthon_padlo_szabalyozas
-            state:
-              - heat
+          - alias: Otthon padló szabályozás fűtést kér
+            condition: template
+            value_template: >-
+              {% set e = 'climate.otthon_padlo_szabalyozas' %}
+              {{ state_attr(e, 'hvac_action') == 'heating'
+                 or (state_attr(e, 'hvac_action') is none
+                     and is_state(e, 'heat')) }}
     then:
       - action: switch.turn_on
         target:
           entity_id: switch.kazan_haz_rele_relay_3_kozos_szivattyu
-      - wait_for_trigger:
-          - trigger: timer.finished
-            target:
-              entity_id: timer.eloszamolas
-            options:
-              behavior: each
-              for: '00:00:00'
+      # Megvárjuk az előfutás timer lejártát. A wait_template akkor is
+      # továbblép, ha a timert törölték vagy már nem fut; az időkorlát miatt
+      # a kazán indítása semmiképp nem marad függőben.
+      - wait_template: '{{ is_state(''timer.eloszamolas'', ''idle'') }}'
+        timeout: '00:30:00'
       - action: switch.turn_on
         target:
           entity_id: switch.kazan_haz_rele_relay_1_kazan
     else:
-      - action: switch.turn_off
-        target:
-          entity_id: switch.kazan_haz_rele_relay_1_kazan
-      - action: switch.turn_off
-        target:
-          entity_id: switch.kazan_haz_rele_relay_3_kozos_szivattyu
+      # Igény nélkül csak az újraszinkronizálás kapcsol le (pl. HA újraindulás
+      # miatt megszakadt utánfutás után), akkor viszont mindhárom relét.
+      # Más triggernél a leállítás a leállító automatizmusok dolga.
+      - if:
+          - condition: trigger
+            id: resync
+        then:
+          - action: switch.turn_off
+            target:
+              entity_id:
+                - switch.kazan_haz_rele_relay_1_kazan
+                - switch.kazan_haz_rele_relay_3_kozos_szivattyu
+                - switch.kazan_haz_rele_relay_4_padlo_szivattyu
 mode: restart

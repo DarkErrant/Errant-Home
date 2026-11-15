@@ -1,0 +1,44 @@
+alias: 'Radiátor kör: Kazán leállítása'
+description: >-
+  Ha a Q3 termosztát igénye megszűnik és a padló körök sem kérnek fűtést,
+  leállítja a kazánt. A közös szivattyút csak akkor kapcsolja le, ha nem fut
+  padlófűtés utánfutás (azt a padlófűtés leállító automatizmus zárja le).
+triggers:
+  - trigger: state
+    entity_id:
+      - binary_sensor.rele_computherm_q3_termosztat
+    from: 'on'
+    to: 'off'
+    for: '00:00:30'
+conditions:
+  - alias: Egyik padló kör sem kér fűtést
+    condition: not
+    conditions:
+      - condition: state
+        entity_id: climate.padlofutes_visszatero_szabalyzo
+        attribute: hvac_action
+        state: heating
+      - condition: state
+        entity_id: climate.kazan_haz_kazan_vezerles_q7_kozponti
+        attribute: hvac_action
+        state: heating
+      - alias: Otthon padló szabályozás fűtést kér
+        condition: template
+        value_template: >-
+          {% set e = 'climate.otthon_padlo_szabalyozas' %}
+          {{ state_attr(e, 'hvac_action') == 'heating'
+             or (state_attr(e, 'hvac_action') is none
+                 and is_state(e, 'heat')) }}
+actions:
+  - action: switch.turn_off
+    target:
+      entity_id: switch.kazan_haz_rele_relay_1_kazan
+  - if:
+      - condition: state
+        entity_id: switch.kazan_haz_rele_relay_4_padlo_szivattyu
+        state: 'off'
+    then:
+      - action: switch.turn_off
+        target:
+          entity_id: switch.kazan_haz_rele_relay_3_kozos_szivattyu
+mode: single
