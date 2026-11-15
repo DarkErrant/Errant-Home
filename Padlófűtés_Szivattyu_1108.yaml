@@ -1,7 +1,8 @@
 alias: 'Padlófűtés: Szivattyú intelligens leállítása'
 description: >-
-  A padlófűtési igény megszűnése után kezeli az utánfutást Delta T vagy 10 perc
-  alapján.
+  A padlófűtési igény megszűnése után kezeli az utánfutást Delta T vagy 15 perc
+  alapján. Az utánfutás végén újra ellenőrzi az igényt, és a kazánt meg a közös
+  szivattyút csak akkor kapcsolja le, ha a radiátor kör (Q3) sem kér fűtést.
 triggers:
   - trigger: state
     entity_id:
@@ -10,7 +11,8 @@ triggers:
     attribute: hvac_action
     to: idle
 conditions:
-  - condition: not
+  - alias: Egyik padló kör sem kér fűtést
+    condition: not
     conditions:
       - condition: state
         entity_id: climate.padlofutes_visszatero_szabalyzo
@@ -20,7 +22,6 @@ conditions:
         entity_id: climate.kazan_haz_kazan_vezerles_q7_kozponti
         attribute: hvac_action
         state: heating
-    enabled: false
 actions:
   - choose:
       - conditions:
@@ -53,11 +54,36 @@ actions:
               milliseconds: 0
             enabled: false
         alias: Idozitett leallitas (KI)
+  # Ha az utánfutás alatt visszajött az igény, itt megáll a futás, és nem
+  # kapcsol le semmit.
+  - alias: 'Újraellenőrzés: az utánfutás alatt sem jött vissza az igény'
+    condition: not
+    conditions:
+      - condition: state
+        entity_id: climate.padlofutes_visszatero_szabalyzo
+        attribute: hvac_action
+        state: heating
+      - condition: state
+        entity_id: climate.kazan_haz_kazan_vezerles_q7_kozponti
+        attribute: hvac_action
+        state: heating
   - action: switch.turn_off
     target:
       entity_id:
         - switch.kazan_haz_rele_relay_4_padlo_szivattyu
-        - switch.kazan_haz_rele_relay_1_kazan
-        - switch.kazan_haz_rele_relay_3_kozos_szivattyu
     data: {}
-mode: single
+  # A kazán és a közös szivattyú a radiátor kört is kiszolgálja, ezért csak
+  # akkor állhat le, ha a Q3 termosztát sem kér fűtést.
+  - if:
+      - condition: state
+        entity_id: binary_sensor.rele_computherm_q3_termosztat
+        state: 'off'
+    then:
+      - action: switch.turn_off
+        target:
+          entity_id:
+            - switch.kazan_haz_rele_relay_1_kazan
+            - switch.kazan_haz_rele_relay_3_kozos_szivattyu
+        data: {}
+# restart: egy újabb idle váltás újraindítja az utánfutást, nem vész el.
+mode: restart

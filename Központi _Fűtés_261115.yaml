@@ -16,6 +16,25 @@ triggers:
       - climate.kazan_haz_kazan_vezerles_q7_kozponti
     to:
       - heat
+  # A termosztátok üzemmódja végig "heat" marad, a tényleges fűtési igényt a
+  # hvac_action jelzi. Enélkül egy idle -> heating váltás után semmi nem
+  # indította újra a kazánt és a szivattyúkat.
+  - trigger: state
+    entity_id:
+      - climate.padlofutes_visszatero_szabalyzo
+      - climate.kazan_haz_kazan_vezerles_q7_kozponti
+      - climate.otthon_padlo_szabalyozas
+    attribute: hvac_action
+    to: heating
+  # A relé ESP újraindulása / újracsatlakozása után a relék kikapcsolva
+  # maradhatnak, ezért ilyenkor újra kiértékeljük az igényt.
+  - trigger: state
+    entity_id:
+      - switch.kazan_haz_rele_relay_1_kazan
+    from: unavailable
+    to:
+      - 'on'
+      - 'off'
 actions:
   - action: timer.start
     metadata: {}

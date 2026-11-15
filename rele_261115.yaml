@@ -4,6 +4,20 @@
 esphome:
   name: rele
   friendly_name: Kazan vezerles
+  # Az on_client_disconnected csak akkor fut le, ha előtte volt kapcsolat.
+  # Újraindulás után (pl. a 15 perces reboot_timeout miatt) ezért itt is
+  # élesítjük a vészhelyzeti módot, ha 5 perc alatt nem jelentkezik a HA.
+  on_boot:
+    priority: -100
+    then:
+      - delay: 5min
+      - if:
+          condition:
+            not:
+              api.connected:
+          then:
+            - lambda: |-
+                id(HA_offline_mod) = true;
 
 esp32:
   variant: esp32
