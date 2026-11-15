@@ -30,11 +30,11 @@ actions:
             state: 'on'
         sequence:
           - delay: '00:03:00'
-          - wait_for_trigger:
-              - trigger: numeric_state
-                entity_id:
-                  - sensor.padlofutes_delta_t
-                below: 5
+          # wait_template: ha a Delta T már most 5 alatt van, azonnal
+          # továbblép. A numeric_state trigger csak az átlépésre sült el,
+          # így ilyenkor kivárta a teljes 30 percet.
+          - wait_template: >-
+              {{ states('sensor.padlofutes_delta_t') | float(99) < 5 }}
             timeout: '00:30:00'
         alias: Delta T alapu leallitas (BE)
       - conditions:
