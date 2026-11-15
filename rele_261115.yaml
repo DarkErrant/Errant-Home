@@ -1,0 +1,262 @@
+# Board: ESP32_Relay X4 (AC/DC powered)
+# Definition: definitions/boards/esp32_relay_x4/manifest.yaml
+
+esphome:
+  name: rele
+  friendly_name: Kazan vezerles
+
+esp32:
+  variant: esp32
+  framework:
+    type: esp-idf
+
+logger:
+  level: DEBUG
+  
+globals:
+  - id: HA_offline_mod
+    type: bool
+    restore_value: no
+    initial_value: 'false'
+api:
+  encryption:
+    key: !secret rele__encryption_key
+  reboot_timeout: 15min
+  on_client_disconnected:
+    then:
+      - delay: 5min
+      - if:
+          condition:
+            not:
+              api.connected:
+          then:
+            - lambda: |
+                id(HA_offline_mod) = true;
+  # Amint a HA visszatér, kikapcsoljuk a vészhelyzeti módot
+  on_client_connected:
+    - lambda: | 
+        id(HA_offline_mod) = false;
+
+ota:
+  - platform: esphome
+    encryption:
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+  ap:
+    ssid: Kazan vezerles Fallback Hotspot
+    password: "hJCAv03QaEk8"
+  fast_connect: true
+  post_connect_roaming: false
+captive_portal:
+#  ---Szabad GPIO Labak GPIO17 GPIO18 GPIO19 GPIO21 GPIO22 GPIO5 ---
+time:
+  - platform: sntp
+    id: time_sntp_1
+    timezone: Europe/Budapest
+
+i2c:
+  - id: i2c_1
+    sda: GPIO13
+    scl: GPIO14
+    scan: true
+button:
+  - platform: restart
+    name: "Újraindítás"
+  
+  
+binary_sensor:
+  - platform: status
+    name: "Állapota"
+    update_interval: 10s
+
+  # --- TERMOSZTÁTOK (Opto-csatolon keresztül) ---
+  - platform: gpio
+    pin:
+      number: GPIO15  
+      mode: INPUT_PULLUP
+      inverted: true
+    name: "Computherm Q3 Termosztát"
+    device_class: heat
+    filters:
+      - delayed_on: 50ms
+      - delayed_off: 50ms
+        
+  - platform: gpio
+    pin:
+      number: GPIO16 
+      mode: INPUT_PULLUP
+      inverted: true
+    name: "Computherm Q7 Termosztát"
+    device_class: heat
+    filters:
+      - delayed_on: 50ms
+      - delayed_off: 50ms
+  
+# Fizikai rele kapcsolok        
+ 
+switch:
+  - platform: gpio
+    id: switch_gpio_1
+    name: Relay 1 Kazan
+    pin: 32
+    icon: "mdi:gas-burner"
+    
+  - platform: gpio
+    id: switch_gpio_2
+    name: Relay 2 Emeleti szelep
+    pin: 33
+    icon: "mdi:valve"
+    
+  - platform: gpio
+    id: switch_gpio_3
+    name: Relay 3 Kozos szivattyu
+    pin: 25
+    icon: "mdi:pump"
+    
+  - platform: gpio
+    id: switch_gpio_4
+    name: Relay 4 Padlo szivattyu
+    pin: 26
+    icon: "mdi:heating-coil"
+    
+
+    
+espnow:
+  auto_add_peer: true
+  id: Pipe_temps
+  peers:
+    - "E0:72:A1:72:49:68"
+
+packet_transport:
+  - platform: espnow
+    providers:
+      - name: esp_temp_sens
+
+    espnow_id: Pipe_temps
+    update_interval: 20s
+    id: Sended_padlo_out
+    
+sensor:
+  - platform: uptime
+    name: "Üzemidő"
+    id: uptime_sensor
+    update_interval: 60s
+
+  - platform: wifi_signal
+    name: "WiFi Jel"
+    update_interval: 60s
+
+# ---   Padlo futes visszatero kapott adat, es kiiras  --- 
+  - platform: packet_transport
+    name: Padlo elmeno fogadott
+    provider: esp_temp_sens
+    internal: true
+    remote_id: Padlo_out
+    id: remote_padlo_out
+    icon: "mdi:access-point-plus"
+    device_class: temperature
+    unit_of_measurement: °C
+    accuracy_decimals: 2
+ # --- Hiszterézis szabályozás (20°C és 24°C között) a padlófűtésnek. --- 
+ # --- Akkor engedi futni, ha nincs kapcsolat a Home Assistanttal.  ---
+    on_value:
+      then:
+        - if:
+            # 1. FELTÉTEL: Csak akkor teszünk bármit, ha a HA OFFLINE!
+            condition:
+              - lambda: 'return id(HA_offline_mod);'
+            then:
+              - if:
+                  # BEKAPCSOLÁS: Ha a visszatérő víz 20 fok alá esik
+                  condition:
+                    - lambda: 'return x < 20.0;'
+                  then:
+                    - switch.turn_on: switch_gpio_4 # Padló szivattyú (R4)
+                    #- switch.turn_on: switch_gpio_3 # Közös szivattyú (R3)
+                    - switch.turn_on: switch_gpio_1 # Kazán indítás (R1)
+              - if:
+                  # KIKAPCSOLÁS: Ha a visszatérő eléri a 24 fokot
+                  condition:
+                    - lambda: 'return x >= 24.0;'
+                  then:
+                    - switch.turn_off: switch_gpio_4
+                    #- switch.turn_off: switch_gpio_3
+                    - switch.turn_off: switch_gpio_1
+  - platform: template
+    name: Kapott padlo out
+    id: sensor_template_1
+    accuracy_decimals: 2
+    lambda: |-
+      return id(remote_padlo_out).state;
+    update_interval: 20s
+    icon: "mdi:ab-testing"
+    device_class: temperature
+    unit_of_measurement: °C
+    
+# ---   Torulkozo szarito elmeno kapott adat, es kiiras  ---  
+
+  - platform: packet_transport
+    name: Torulkozo szarito out
+    provider: esp_temp_sens
+    remote_id: sensor_aht10_3_temperature
+    icon: "mdi:abacus"
+    device_class: temperature
+    unit_of_measurement: °C
+    accuracy_decimals: 2
+    internal: true
+    id: Torulkozo_szarito_out
+  - platform: template
+    name: Torulkozo OUT
+    id: sensor_template_2
+    accuracy_decimals: 2
+    lambda: |-
+      return id(Torulkozo_szarito_out).state;
+    update_interval: 20s
+    icon: "mdi:radiator-disabled"
+    device_class: temperature
+    unit_of_measurement: °C  
+    
+# ---   Q7 Termoszatat helyen levo AHT20,  kapott adat, es kiiras  ---         
+  
+  - platform: packet_transport
+    name: Q7_Termosztat
+    provider: esp_temp_sens
+    remote_id: sensor_Q7_temp
+    icon: "mdi:thermostat"
+    device_class: temperature
+    unit_of_measurement: °C
+    accuracy_decimals: 2
+    internal: true
+    id: kapott_kozponti_q7
+  - platform: template
+    name: Kapott központi Q7
+    id: sensor_template_3
+    accuracy_decimals: 2
+    lambda: |-
+      return id(kapott_kozponti_q7).state;
+    update_interval: 20s
+    icon: "mdi:thermostat"
+    device_class: temperature
+    unit_of_measurement: °C
+
+#   ---   Direkt AHT Pinceablakban   --- 
+
+  - platform: aht10
+    id: sensor_pince_outside
+    humidity:
+      name: Kinti Páratartalom
+      id: sensor_pince_outside_humidity
+      icon: "mdi:water-thermometer-outline"
+    temperature:
+      name: Külső hömérséklet
+      id: sensor_pince_outside_temperature
+      icon: "mdi:home-thermometer-outline"
+    variant: AHT20
+    i2c_id: i2c_1
+    update_interval: 60s
+
+
+    
+    

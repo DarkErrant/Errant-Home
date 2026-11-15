@@ -1,0 +1,63 @@
+alias: 'Padlófűtés: Szivattyú intelligens leállítása'
+description: >-
+  A padlófűtési igény megszűnése után kezeli az utánfutást Delta T vagy 10 perc
+  alapján.
+triggers:
+  - trigger: state
+    entity_id:
+      - climate.padlofutes_visszatero_szabalyzo
+      - climate.kazan_haz_kazan_vezerles_q7_kozponti
+    attribute: hvac_action
+    to: idle
+conditions:
+  - condition: not
+    conditions:
+      - condition: state
+        entity_id: climate.padlofutes_visszatero_szabalyzo
+        attribute: hvac_action
+        state: heating
+      - condition: state
+        entity_id: climate.kazan_haz_kazan_vezerles_q7_kozponti
+        attribute: hvac_action
+        state: heating
+    enabled: false
+actions:
+  - choose:
+      - conditions:
+          - condition: state
+            entity_id: input_boolean.time_delta_t
+            state: 'on'
+        sequence:
+          - delay: '00:03:00'
+          - wait_for_trigger:
+              - trigger: numeric_state
+                entity_id:
+                  - sensor.padlofutes_delta_t
+                below: 5
+            timeout: '00:30:00'
+        alias: Delta T alapu leallitas (BE)
+      - conditions:
+          - condition: state
+            entity_id: input_boolean.time_delta_t
+            state: 'off'
+        sequence:
+          - delay:
+              hours: 0
+              minutes: 15
+              seconds: 0
+              milliseconds: 0
+          - delay:
+              hours: 0
+              minutes: 5
+              seconds: 0
+              milliseconds: 0
+            enabled: false
+        alias: Idozitett leallitas (KI)
+  - action: switch.turn_off
+    target:
+      entity_id:
+        - switch.kazan_haz_rele_relay_4_padlo_szivattyu
+        - switch.kazan_haz_rele_relay_1_kazan
+        - switch.kazan_haz_rele_relay_3_kozos_szivattyu
+    data: {}
+mode: single

@@ -1,0 +1,83 @@
+alias: 'Központi Fűtés: Indítás és Kazánvezérlés'
+description: >-
+  Minden fűtési igényt kezel, indítja a kazánt, a szivattyúkat. A leállítást
+  külön modulok végzik.
+triggers:
+  - trigger: state
+    entity_id:
+      - binary_sensor.rele_computherm_q7_termosztat
+      - binary_sensor.rele_computherm_q3_termosztat
+    for: '00:00:30'
+    to:
+      - 'on'
+  - trigger: state
+    entity_id:
+      - climate.otthon_padlo_szabalyozas
+      - climate.kazan_haz_kazan_vezerles_q7_kozponti
+    to:
+      - heat
+actions:
+  - action: timer.start
+    metadata: {}
+    target:
+      entity_id: timer.eloszamolas
+    data: {}
+  - if:
+      - condition: or
+        conditions:
+          - condition: state
+            entity_id: climate.padlofutes_visszatero_szabalyzo
+            attribute: hvac_action
+            state: heating
+          - condition: state
+            entity_id: climate.kazan_haz_kazan_vezerles_q7_kozponti
+            attribute: hvac_action
+            state: heating
+          - condition: state
+            entity_id: climate.otthon_padlo_szabalyozas
+            state:
+              - heat
+    then:
+      - action: switch.turn_on
+        target:
+          entity_id: switch.kazan_haz_rele_relay_4_padlo_szivattyu
+  - if:
+      - condition: or
+        conditions:
+          - condition: state
+            entity_id: binary_sensor.rele_computherm_q3_termosztat
+            state: 'on'
+          - condition: state
+            entity_id: climate.padlofutes_visszatero_szabalyzo
+            attribute: hvac_action
+            state: heating
+          - condition: state
+            entity_id: climate.kazan_haz_kazan_vezerles_q7_kozponti
+            attribute: hvac_action
+            state: heating
+          - condition: state
+            entity_id: climate.otthon_padlo_szabalyozas
+            state:
+              - heat
+    then:
+      - action: switch.turn_on
+        target:
+          entity_id: switch.kazan_haz_rele_relay_3_kozos_szivattyu
+      - wait_for_trigger:
+          - trigger: timer.finished
+            target:
+              entity_id: timer.eloszamolas
+            options:
+              behavior: each
+              for: '00:00:00'
+      - action: switch.turn_on
+        target:
+          entity_id: switch.kazan_haz_rele_relay_1_kazan
+    else:
+      - action: switch.turn_off
+        target:
+          entity_id: switch.kazan_haz_rele_relay_1_kazan
+      - action: switch.turn_off
+        target:
+          entity_id: switch.kazan_haz_rele_relay_3_kozos_szivattyu
+mode: restart

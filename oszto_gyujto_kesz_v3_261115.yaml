@@ -1,0 +1,235 @@
+# Board: ESP32-C3 Super Mini (Generic)
+# Definition: definitions/boards/esp32-c3-supermini/manifest.yaml
+
+# 1, Alapbeállítások: esphome:, esp32
+
+esphome:
+  name: esp_temp_sens
+  friendly_name: Osztó-gyűjtő
+  on_boot:
+    priority: 600
+    then:
+      - delay: 500ms
+        
+  area: Kazan haz
+esp32:
+  variant: esp32c3
+  flash_size: 4MB
+  framework:
+    type: esp-idf
+logger:
+  level: DEBUG
+
+#2, Kommunikáció: wifi, api, logger, ota
+
+api:
+  encryption:
+    key: !secret elso_esp32c3__encryption_key
+  homeassistant_services: false
+  homeassistant_states: false
+
+ota:
+  - platform: esphome
+    encryption:
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+  ap:
+    ssid: elso_esp32C3 Fallback Hotspot
+    password: "47XVadn8hrbc"
+  fast_connect: true
+  post_connect_roaming: false
+captive_portal:
+
+i2c:
+  - scl: 9
+    sda: 8
+    id: i2c_1
+
+tca9548a:
+  - i2c_id: i2c_1
+    id: tca9548a_1
+    channels:
+      - bus_id: padlo_in
+        channel: "0"
+      - bus_id: padlo_out
+        channel: "1"
+      - bus_id: radiatorok_out
+        channel: "2"
+      - bus_id: radiatorok_in
+        channel: "3"
+      - bus_id: emelet_in
+        channel: 4
+      - bus_id: emelet_out
+        channel: 5
+      - bus_id: levego_temp
+        channel: 6
+      - bus_id: Q7
+        channel: 7
+
+# 4, Idő és rendszer: time, deep_sleep
+
+time:
+  - platform: sntp
+    id: sntp_time
+    timezone: Europe/Budapest
+
+
+# 5, Periferiak: binary_sensor, sensor, switch, ouput    
+
+sensor:
+  # Padlófűtés szenzorok
+  - platform: aht10
+    humidity:
+      id: sensor_aht10_1_humidity
+      name: Humidity_1
+    temperature:
+      id: Padlo_in
+      name: Padló fűtés bejövő víz hőmérséklet
+      icon: "mdi:thermometer-plus"
+    id: sensor_aht10_1
+    i2c_id: padlo_in
+    variant: AHT20
+  - platform: aht10
+    temperature:
+      id: Padlo_out
+      name: Padló fűtés elmenő víz hőmérséklet
+      icon: "mdi:thermometer-minus"
+    id: sensor_aht10_2
+    i2c_id: padlo_out
+    variant: AHT20
+  # Torulkozo szenzorok  
+  - platform: aht10
+    temperature:
+      id: sensor_aht10_3_temperature
+      name: Törülköző szárító visszatérő
+      icon: "mdi:radiator-disabled"
+    id: sensor_aht10_3
+    i2c_id: radiatorok_out
+    variant: AHT20
+  - platform: aht10
+    temperature:
+      id: sensor_aht10_4_temperature
+      name: Törülköző szárító bejövő
+      icon: "mdi:radiator"
+    id: sensor_aht10_4
+    variant: AHT20
+    i2c_id: radiatorok_in
+  # Emeletre meno szenzorok  
+  - platform: aht10
+    temperature:
+      id: sensor_aht10_5_temperature
+      name: Emeleti radiátor bejövő
+      icon: "mdi:radiator"
+    id: sensor_aht10_5
+    i2c_id: emelet_out
+    variant: AHT20
+  - platform: aht10
+    temperature:
+      id: sensor_aht10_6_temperature
+      name: Emeleti radiátor visszatérő
+      icon: "mdi:radiator-disabled"
+    id: sensor_aht10_6
+    i2c_id: emelet_in
+    variant: AHT20
+  #Pluszba rakötött levego homerseklet
+  - platform: aht10
+    temperature:
+      id: sensor_aht10_7_temperature
+      name: Oszto-gyujto levego homerseklet
+      icon: "mdi:temperature-celsius"
+    id: sensor_aht10_7
+    i2c_id: levego_temp
+    variant: AHT20
+    humidity:
+      name: Oszto-gyujto paratartalom
+      icon: "mdi:air-humidifier"
+      id: oszto_hum
+  #Termosztat melletti    
+  - platform: aht10
+    temperature:
+      id: sensor_Q7_temp
+      name: Központi
+      icon: "mdi:temperature-celsius"
+    id: sensor_aht10_8
+    i2c_id: Q7
+    variant: AHT20
+    humidity:
+      name: Q7 paratartalom
+      icon: "mdi:air-humidifier"
+      id: Q7_hum
+# system monitor      
+  - platform: uptime
+    name: "Üzemidő"
+    id: uptime_sensor
+    update_interval: 60s
+  - platform: wifi_signal
+    name: "WiFi Jel"
+    update_interval: 60s
+
+    
+#akku fesz erzekelo: Volt     
+  - platform: adc
+    name: Akku fesz.
+    pin: GPIO0
+    id: Batt_voltage
+    icon: "mdi:battery-charging-wireless-outline"
+    attenuation: 12db
+    filters:
+      - median:
+          send_every: 4
+          window_size: 7
+      - sliding_window_moving_average:
+          send_every: 1
+          window_size: 10
+      - multiply: 2
+    update_interval: 29s
+    device_class: voltage
+    unit_of_measurement: V
+#akku fesz erzekelo: %    
+  - platform: template
+    name: Akku allapot
+    id: akku_szenzor
+    device_class: battery
+    unit_of_measurement: "%"
+    update_interval: 30s
+    accuracy_decimals: 0
+    lambda: |-
+            return id(Batt_voltage).state;
+    filters:
+      - calibrate_linear:
+          datapoints:
+            - 3.3 -> 0
+            - 3.7  -> 20
+            - 3.85 -> 60
+            - 4.2 -> 100
+      - clamp:
+          min_value: 0
+          max_value: 100
+button:
+  - platform: restart
+    name: "Újraindítás"
+    
+binary_sensor:
+  - platform: status
+    name: "Állapota"
+    update_interval: 10s
+    icon: "mdi:pipe"
+
+espnow:
+  auto_add_peer: true
+  peers:
+    - "D4:E9:F4:B6:22:70"
+  id: Pipe_temps
+  
+packet_transport:
+  - platform: espnow
+    sensors:
+      - id: Padlo_out
+      - id: sensor_aht10_3_temperature
+      - id: sensor_Q7_temp
+
+    peer_address: "D4:E9:F4:B6:22:70"
+    update_interval: 20s
+    espnow_id: Pipe_temps
