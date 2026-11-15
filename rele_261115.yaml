@@ -35,7 +35,10 @@ globals:
 api:
   encryption:
     key: !secret rele__encryption_key
-  reboot_timeout: 15min
+  # 0s: HA-kiesés miatt ne induljon újra az ESP. Az újraindulás minden relét
+  # lekapcsolna és törölné az offline vészüzemet, ami így 15 percenként
+  # megszakadna. A WiFi kiesését a wifi saját reboot_timeout-ja kezeli.
+  reboot_timeout: 0s
   on_client_disconnected:
     then:
       - delay: 5min
@@ -60,7 +63,7 @@ wifi:
   password: !secret wifi_password
   ap:
     ssid: Kazan vezerles Fallback Hotspot
-    password: "hJCAv03QaEk8"
+    password: !secret rele_fallback_ap_password
   fast_connect: true
   post_connect_roaming: false
 captive_portal:
@@ -173,6 +176,10 @@ sensor:
     device_class: temperature
     unit_of_measurement: °C
     accuracy_decimals: 2
+    # Ha 5 percig nem jön adat az osztó-gyűjtő ESP-től, NaN lesz az érték,
+    # és az offline vészüzem lekapcsol (lásd lent).
+    filters:
+      - timeout: 5min
  # --- Hiszterézis szabályozás (20°C és 24°C között) a padlófűtésnek. --- 
  # --- Akkor engedi futni, ha nincs kapcsolat a Home Assistanttal.  ---
     on_value:
@@ -191,9 +198,10 @@ sensor:
                     #- switch.turn_on: switch_gpio_3 # Közös szivattyú (R3)
                     - switch.turn_on: switch_gpio_1 # Kazán indítás (R1)
               - if:
-                  # KIKAPCSOLÁS: Ha a visszatérő eléri a 24 fokot
+                  # KIKAPCSOLÁS: Ha a visszatérő eléri a 24 fokot, vagy
+                  # nincs érvényes mérés (NaN) - felső korlát nélkül ne fűtsön
                   condition:
-                    - lambda: 'return x >= 24.0;'
+                    - lambda: 'return isnan(x) || x >= 24.0;'
                   then:
                     - switch.turn_off: switch_gpio_4
                     #- switch.turn_off: switch_gpio_3

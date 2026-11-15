@@ -22,6 +22,13 @@ conditions:
         entity_id: climate.kazan_haz_kazan_vezerles_q7_kozponti
         attribute: hvac_action
         state: heating
+      - alias: Otthon padló szabályozás fűtést kér
+        condition: template
+        value_template: >-
+          {% set e = 'climate.otthon_padlo_szabalyozas' %}
+          {{ state_attr(e, 'hvac_action') == 'heating'
+             or (state_attr(e, 'hvac_action') is none
+                 and is_state(e, 'heat')) }}
 actions:
   - action: switch.turn_off
     target:

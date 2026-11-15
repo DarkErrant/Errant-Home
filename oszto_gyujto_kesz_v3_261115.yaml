@@ -37,7 +37,7 @@ wifi:
   password: !secret wifi_password
   ap:
     ssid: elso_esp32C3 Fallback Hotspot
-    password: "47XVadn8hrbc"
+    password: !secret oszto_fallback_ap_password
   fast_connect: true
   post_connect_roaming: false
 captive_portal:
